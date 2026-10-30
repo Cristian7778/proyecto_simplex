@@ -5,8 +5,8 @@ from simplex_solver import resolver_simplex_propio, resolver_pulp
 
 st.set_page_config(page_title="OptimiApp - Simplex Solver", layout="wide")
 
-st.title("Dashboard de Optimización y Programación Lineal")
-st.caption("Solucionador dinámico con comparación de algoritmos y módulo de escenarios")
+st.title("Sistema Inteligente de Optimización de Recursos")
+st.caption("Solucionador de algoritmos y módulo de escenarios")
 
 # --- BARRA LATERAL: Configuración ---
 st.sidebar.header("Configuración del Modelo")
