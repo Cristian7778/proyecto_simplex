@@ -5,11 +5,11 @@ from simplex_solver import resolver_simplex_propio, resolver_pulp
 
 st.set_page_config(page_title="OptimiApp - Simplex Solver", layout="wide")
 
-st.title("📊 Dashboard de Optimización y Programación Lineal")
+st.title("Dashboard de Optimización y Programación Lineal")
 st.caption("Solucionador dinámico con comparación de algoritmos y módulo de escenarios")
 
 # --- BARRA LATERAL: Configuración ---
-st.sidebar.header(" JOSUE MIMIR Configuración del Modelo")
+st.sidebar.header("Configuración del Modelo")
 
 nombre_problema = st.sidebar.text_input("Nombre del Escenario", "Asignación de Recursos")
 tipo_opt = st.sidebar.radio("Objetivo", ["Maximizar", "Minimizar"])
