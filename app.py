@@ -209,28 +209,55 @@ with tab3:
     texto += f"\nGenerando un resultado óptimo de **Q{res_propio['z']:,}**."
     st.info(texto)
 
-    # BOTÓN DE EXPORTACIÓN A CSV PARA POWER BI
+    # --- EXPORTAR DATASET COMPLETO PARA POWER BI ---
     st.markdown("---")
-    st.subheader("📥 Exportar Resultados a CSV para Power BI")
-    
-    df_export = pd.DataFrame({
-        "Escenario": [nombre_problema] * num_vars,
-        "Variable": nombres_vars,
-        "Cantidad_Optima": [res_propio["solucion"][f"x{i+1}"] for i in range(num_vars)],
-        "Coeficiente_C": coef_c,
-        "Valor_Z_Total": [res_propio["z"]] * num_vars,
-        "Estado": [res_propio["estado"]] * num_vars
-    })
-    
-    csv_bytes = df_export.to_csv(index=False).encode('utf-8')
-    
+    st.subheader("📥 Exportar Resultados Completos a CSV para Power BI")
+
+    # 1. Filas correspondientes a las Variables de Decisión
+    filas_csv = []
+    for j in range(num_vars):
+        filas_csv.append({
+            "Escenario": nombre_problema,
+            "Tipo_Registro": "Variable de Decisión",
+            "Nombre": nombres_vars[j],
+            "Valor": res_propio["solucion"][f"x{j+1}"],
+            "PrecioSombra_Coef": coef_c[j],
+            "Disponible": None,
+            "Utilizado": None,
+            "Holgura": None,
+            "Estado": res_propio["estado"],
+            "Valor_Z_Total": res_propio["z"]
+        })
+
+    # 2. Filas correspondientes a los Recursos / Restricciones y Holguras
+    for i in range(num_rest):
+        uso_rec = sum(matriz_A[i][j] * res_propio["solucion"][f"x{j+1}"] for j in range(num_vars))
+        disp_rec = vector_b[i]
+        holgura_rec = round(disp_rec - uso_rec, 4)
+        
+        filas_csv.append({
+            "Escenario": nombre_problema,
+            "Tipo_Registro": "Recurso / Holgura",
+            "Nombre": nombres_rest[i],
+            "Valor": None,
+            "PrecioSombra_Coef": None,
+            "Disponible": disp_rec,
+            "Utilizado": round(uso_rec, 4),
+            "Holgura": holgura_rec,
+            "Estado": "Agotado" if holgura_rec == 0 else "Sobrante",
+            "Valor_Z_Total": res_propio["z"]
+        })
+
+    # Convertir a DataFrame y codificar a CSV
+    df_export_powerbi = pd.DataFrame(filas_csv)
+    csv_bytes = df_export_powerbi.to_csv(index=False).encode('utf-8')
+
     st.download_button(
-        label="📄 Descargar Dataset CSV para Power BI",
+        label="📄 Descargar Dataset Completo para Power BI",
         data=csv_bytes,
-        file_name=f"resultados_{nombre_problema.lower().replace(' ', '_')}.csv",
+        file_name=f"dataset_powerbi_{nombre_problema.lower().replace(' ', '_')}.csv",
         mime="text/csv"
     )
-
 # --- TAB 4: MÓDULO DE ESCENARIOS Y SENSIBILIDAD ---
 with tab4:
     st.subheader("🧪 Análisis de Escenarios y Sensibilidad")
