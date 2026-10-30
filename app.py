@@ -46,7 +46,7 @@ with tab1:
         vector_b.append(val_b)
 
     st.markdown("---")
-    st.subheader("📐 Modelo Matemático Formalizado")
+    st.subheader("SHO MANO")
     eq_obj = f"\\text{{{tipo_opt}}} \\quad Z = " + " + ".join([f"{coef_c[i]}x_{{{i+1}}}" for i in range(num_vars)])
     st.latex(eq_obj)
     st.write("Sujeto a:")
