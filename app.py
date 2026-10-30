@@ -74,7 +74,7 @@ with tab2:
     st.caption("La fila Z muestra $z_j - c_j$; M es la penalización de las artificiales.")
     st.markdown("---")
 
-    # 1. Renderizado de cada paso/iteración
+    # 1. RENDERIZADO DE TODAS LAS TABLAS / ITERACIONES DEL SIMPLEX PROPIO
     for iter_info in res_propio["iteraciones"]:
         paso_num = iter_info['paso']
         
@@ -85,6 +85,7 @@ with tab2:
         else:
             st.markdown(f"### Iteración {paso_num}")
 
+        # Subtítulo explicativo del pivote y variables
         if iter_info.get("entrante"):
             st.markdown(
                 f"**Entra {iter_info['entrante']}** (valor más negativo en Z) · "
@@ -94,18 +95,29 @@ with tab2:
         elif iter_info.get("es_final"):
             st.success("No quedan valores negativos en la fila Z: la solución es óptima.")
 
+        # Muestra la tabla de la iteración actual
         df_mostrar = iter_info["tabla"].fillna("-")
         st.dataframe(df_mostrar, use_container_width=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-    # Resumen de variables al final del procedimiento
+    # Resumen explícito de variables básicas y no básicas al final
     basicas_str = ", ".join([f"{var} = {res_propio['solucion_completa'].get(var, 0)}" for var in res_propio['basicas_final']])
     no_basicas_str = ", ".join(res_propio['no_basicas_final'])
     
     st.markdown(f"**Variables básicas:** {basicas_str}")
     st.markdown(f"**Variables no básicas (valen 0):** {no_basicas_str}")
 
-    # 2. COMPARACIÓN SIMPLEX PROPIO VS PULP (SECCIÓN RESTAURADA)
+    st.markdown("---")
+
+    # 2. ESPACIO Y EXPLICACIÓN DE RESOLUCIÓN CON PULP
+    st.subheader("⚡ Resolución mediante Librería PuLP (CBC Solver)")
+    st.info(
+        "**Nota Técnica de PuLP:** PuLP utiliza el solver precompilado COIN-OR CBC en C++. "
+        "A diferencia del algoritmo paso a paso desarrollado localmente, PuLP resuelve el problema de forma directa mediante "
+        "optimizaciones matriciales avanzadas (Branch-and-Cut / Simplex Primal), devolviendo directamente el estado y la solución óptima."
+    )
+
+    # 3. SECCIÓN DE COMPARACIÓN: SIMPLEX PROPIO VS. PULP
     st.markdown("---")
     st.subheader("Comparación: Simplex Propio vs. PuLP")
     
@@ -113,14 +125,14 @@ with tab2:
     with col_a:
         st.write("### Método A (Simplex Propio)")
         st.metric("Resultado Z", f"Q{res_propio['z']:,}")
+        st.write("**Valores Óptimos de Variables:**")
         st.json(res_propio["solucion"])
         
     with col_b:
         st.write("### Método B (PuLP)")
         st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
+        st.write("**Valores Óptimos de Variables:**")
         st.json(res_pulp["solucion"])
-
-
 # --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
 with tab3:
     st.subheader("📈 Visualización e Interpretación de Resultados")
