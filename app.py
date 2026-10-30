@@ -67,17 +67,34 @@ with tab1:
 res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
 res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
 
-# TAB 2: PASO A PASO
+# --- TAB 2: PASO A PASO (SIMPLEX VS PULP) ---
 with tab2:
     st.subheader("Iteraciones del Algoritmo Simplex Propio")
+    st.write("Visualización detallada de la tabla inicial, variables básicas/no básicas, pivote e iteraciones.")
+    
     for iter_info in res_propio["iteraciones"]:
-        with st.expander(f"Paso {iter_info['paso']}", expanded=(iter_info['paso'] == 0)):
-            if iter_info["paso"] > 0:
-                st.info(f"**Variable Entrante:** {iter_info['entrante']} | **Variable Saliente:** {iter_info['saliente']}")
-            st.dataframe(iter_info["tabla"])
+        paso_num = iter_info['paso']
+        titulo_expander = f"Paso {paso_num}: Tabla Inicial" if paso_num == 0 else f"Paso {paso_num}: Iteración Simplex"
+        
+        with st.expander(titulo_expander, expanded=(paso_num == 0)):
+            # Mostrar Variables Básicas y No Básicas
+            c_b1, c_b2 = st.columns(2)
+            c_b1.write(f"**Variables Básicas:** `{', '.join(iter_info['basicas'])}`")
+            c_b2.write(f"**Variables No Básicas:** `{', '.join(iter_info['no_basicas'])}`")
+            
+            # Mostrar Pivote e Información de Transición
+            if iter_info['entrante']:
+                st.info(
+                    f"🟢 **Variable Entrante:** `{iter_info['entrante']}` | "
+                    f"🔴 **Variable Saliente:** `{iter_info['saliente']}` | "
+                    f"🎯 **Elemento Pivote:** `{iter_info['pivote_val']}`"
+                )
+            
+            # Tabla de la iteración
+            st.dataframe(iter_info["tabla"], use_container_width=True)
 
     st.markdown("---")
-    st.subheader("Comparación: Simplex Propio vs. PuLP")
+    st.subheader("Comparación de Métodos: Simplex Propio vs. PuLP")
     col_a, col_b = st.columns(2)
     with col_a:
         st.write("### Método A (Simplex Propio)")
@@ -88,7 +105,8 @@ with tab2:
         st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
         st.json(res_pulp["solucion"])
 
-# --- TAB 3: DASHBOARD DE RESULTADOS E INTERFAZ ---
+
+# --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
 with tab3:
     st.subheader("📈 Visualización e Interpretación de Resultados")
     
@@ -124,7 +142,6 @@ with tab3:
     
     col_graf1, col_graf2 = st.columns(2)
     
-    # Gráfico 1: Participación de Variables en la Solución
     with col_graf1:
         df_sol = pd.DataFrame({
             "Variable": nombres_vars,
@@ -139,7 +156,6 @@ with tab3:
         )
         st.plotly_chart(fig_vars, use_container_width=True)
         
-    # Gráfico 2: Recursos Utilizados vs. Disponibles
     with col_graf2:
         df_comparativo_rec = pd.DataFrame({
             "Recurso": nombres_rest * 2,
@@ -165,6 +181,28 @@ with tab3:
         texto += f"- **{cant} unidades** de *{nombres_vars[i]}*\n"
     texto += f"\nGenerando un resultado óptimo de **Q{res_propio['z']:,}**."
     st.info(texto)
+
+    # BOTÓN DE EXPORTACIÓN A CSV PARA POWER BI
+    st.markdown("---")
+    st.subheader("📥 Exportar Resultados a CSV para Power BI")
+    
+    df_export = pd.DataFrame({
+        "Escenario": [nombre_problema] * num_vars,
+        "Variable": nombres_vars,
+        "Cantidad_Optima": [res_propio["solucion"][f"x{i+1}"] for i in range(num_vars)],
+        "Coeficiente_C": coef_c,
+        "Valor_Z_Total": [res_propio["z"]] * num_vars,
+        "Estado": [res_propio["estado"]] * num_vars
+    })
+    
+    csv_bytes = df_export.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label="📄 Descargar Dataset CSV para Power BI",
+        data=csv_bytes,
+        file_name=f"resultados_{nombre_problema.lower().replace(' ', '_')}.csv",
+        mime="text/csv"
+    )
 
 # --- TAB 4: MÓDULO DE ESCENARIOS Y SENSIBILIDAD ---
 with tab4:
