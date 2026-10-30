@@ -158,17 +158,56 @@ with tab3:
     texto += f"\nGenerando un resultado óptimo de **Q{res_propio['z']:,}**."
     st.info(texto)
 
-# TAB 4: ESCENARIOS
+# --- TAB 4: MÓDULO DE ESCENARIOS Y SENSIBILIDAD ---
 with tab4:
-    st.subheader("In Análisis de Escenarios")
-    porcentaje = st.slider("Variar Recursos Disponibles (%)", -50, 50, 0, step=10)
-    
+    st.subheader("🧪 Análisis de Escenarios y Sensibilidad")
+    st.write("Modifica los recursos disponibles para evaluar el impacto en la solución y comparar alternativas.")
+
+    # Slider para ajustar los recursos
+    porcentaje = st.slider("Variar Recursos Disponibles (%)", -50, 50, 0, step=5)
+
+    # Recalcular vector_b con la variación porcentual
     nuevos_b = [b * (1 + porcentaje / 100.0) for b in vector_b]
     res_esc = resolver_pulp(coef_c, matriz_A, nuevos_b, es_max)
+
+    # 1. TABLA COMPARATIVA DETALLADA (Z + Cantidades por Variable)
+    st.markdown("### 📋 Tabla Comparativa de Escenarios")
     
-    df_esc = pd.DataFrame({
-        "Escenario": ["Original", f"Variación ({porcentaje:+}%)"],
+    # Construcción de la tabla con Z y variables individuales
+    datos_comparativos = {
+        "Métrica / Variable": ["Valor Óptimo Z ($Q$)"] + [f"Cantidad {nombres_vars[j]}" for j in range(num_vars)],
+        "Escenario Original": [f"{res_propio['z']:,}"] + [f"{res_propio['solucion'][f'x{j+1}']}" for j in range(num_vars)],
+        f"Escenario Variado ({porcentaje:+d}%)": [f"{res_esc['z']:,}"] + [f"{res_esc['solucion'][f'x{j+1}']}" for j in range(num_vars)],
+        "Diferencia": [f"{res_esc['z'] - res_propio['z']:+,}"] + [
+            f"{res_esc['solucion'][f'x{j+1}'] - res_propio['solucion'][f'x{j+1}']:+}" for j in range(num_vars)
+        ]
+    }
+    
+    df_esc = pd.DataFrame(datos_comparativos)
+    st.dataframe(df_esc, use_container_width=True)
+
+    # 2. GRÁFICO COMPARATIVO DE UTILIDAD Z
+    st.markdown("### 📊 Comparativa de Impacto en el Resultado Óptimo")
+    df_graf_esc = pd.DataFrame({
+        "Escenario": ["Original", f"Variación ({porcentaje:+d}%)"],
         "Valor Óptimo Z": [res_propio["z"], res_esc["z"]]
     })
-    st.table(df_esc)
-    st.plotly_chart(px.bar(df_esc, x="Escenario", y="Valor Óptimo Z", color="Escenario"), use_container_width=True)
+    
+    fig_esc = px.bar(
+        df_graf_esc, 
+        x="Escenario", 
+        y="Valor Óptimo Z", 
+        color="Escenario",
+        text_auto=True,
+        title="Impacto en el Valor Óptimo Z por Cambio en Recursos"
+    )
+    st.plotly_chart(fig_esc, use_container_width=True)
+
+    # Interpretación del Escenario
+    diferencia_z = res_esc['z'] - res_propio['z']
+    if diferencia_z > 0:
+        st.success(f"💡 Al aumentar los recursos en **{porcentaje}%**, la utilidad incrementa en **Q{diferencia_z:,}**.")
+    elif diferencia_z < 0:
+        st.warning(f"⚠️ Al reducir los recursos en **{porcentaje}%**, la utilidad disminuye en **Q{abs(diferencia_z):,}**.")
+    else:
+        st.info("ℹ️ El cambio en recursos no altera el valor óptimo actual.")
