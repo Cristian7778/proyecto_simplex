@@ -46,7 +46,7 @@ with tab1:
         vector_b.append(val_b)
 
     st.markdown("---")
-    st.subheader("📐 Modelo Matemático Formalizado")
+    st.subheader("Modelo Matemático Formalizado")
     eq_obj = f"\\text{{{tipo_opt}}} \\quad Z = " + " + ".join([f"{coef_c[i]}x_{{{i+1}}}" for i in range(num_vars)])
     st.latex(eq_obj)
     st.write("Sujeto a:")
@@ -60,7 +60,7 @@ res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, es_max)
 
 # TAB 2: PASO A PASO
 with tab2:
-    st.subheader("🔄 Iteraciones del Algoritmo Simplex Propio")
+    st.subheader("Iteraciones del Algoritmo Simplex Propio")
     for iter_info in res_propio["iteraciones"]:
         with st.expander(f"Paso {iter_info['paso']}", expanded=(iter_info['paso'] == 0)):
             if iter_info["paso"] > 0:
@@ -68,7 +68,7 @@ with tab2:
             st.dataframe(iter_info["tabla"])
 
     st.markdown("---")
-    st.subheader("⚖️ Comparación: Simplex Propio vs. PuLP")
+    st.subheader("Comparación: Simplex Propio vs. PuLP")
     col_a, col_b = st.columns(2)
     with col_a:
         st.write("### Método A (Simplex Propio)")
@@ -81,7 +81,7 @@ with tab2:
 
 # TAB 3: DASHBOARD
 with tab3:
-    st.subheader("📈 Visualización e Interpretación")
+    st.subheader("Visualización e Interpretación")
     c1, c2 = st.columns(2)
     c1.metric("Valor Óptimo Z", f"Q{res_propio['z']:,}")
     c2.metric("Estado de la Solución", res_propio["estado"])
@@ -93,7 +93,7 @@ with tab3:
     fig = px.bar(df_sol, x="Variable", y="Valor Óptimo", color="Variable", title="Distribución Óptima de Variables")
     st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("🗣️ Interpretación Automática")
+    st.subheader("Interpretación Automática")
     texto = f"Para optimizar el problema **{nombre_problema}**, la solución recomienda:\n\n"
     for i in range(num_vars):
         texto += f"- **{res_propio['solucion'][f'x{i+1}']} unidades** de *{nombres_vars[i]}*\n"
@@ -102,7 +102,7 @@ with tab3:
 
 # TAB 4: ESCENARIOS
 with tab4:
-    st.subheader("🧪In Análisis de Escenarios")
+    st.subheader("In Análisis de Escenarios")
     porcentaje = st.slider("Variar Recursos Disponibles (%)", -50, 50, 0, step=10)
     
     nuevos_b = [b * (1 + porcentaje / 100.0) for b in vector_b]
