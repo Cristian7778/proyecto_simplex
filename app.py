@@ -67,18 +67,17 @@ with tab1:
 res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
 res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
 
-# --- TAB 2: PASO A PASO (FORMATO IDÉNTICO A LA GUÍA) ---
-# --- TAB 2: PASO A PASO (FORMATO IDÉNTICO A LA GUÍA) ---
+# --- TAB 2: PASO A PASO (SIMPLEX PROPIO VS PULP) ---
 with tab2:
     st.subheader("Simplex propio, paso a paso")
     st.caption("Tabla inicial, variable entrante y saliente, pivote y cada iteración hasta la tabla final.")
     st.caption("La fila Z muestra $z_j - c_j$; M es la penalización de las artificiales.")
     st.markdown("---")
 
+    # 1. Renderizado de cada paso/iteración
     for iter_info in res_propio["iteraciones"]:
         paso_num = iter_info['paso']
         
-        # Título del bloque de iteración
         if paso_num == 0:
             st.markdown("### Tabla inicial")
         elif iter_info.get("es_final"):
@@ -86,7 +85,6 @@ with tab2:
         else:
             st.markdown(f"### Iteración {paso_num}")
 
-        # Subtítulo con pivote y variables (Ej: Entra x3 - Sale s2 - Pivote 6)
         if iter_info.get("entrante"):
             st.markdown(
                 f"**Entra {iter_info['entrante']}** (valor más negativo en Z) · "
@@ -96,17 +94,31 @@ with tab2:
         elif iter_info.get("es_final"):
             st.success("No quedan valores negativos en la fila Z: la solución es óptima.")
 
-        # Tabla de iteración formateada sin índices raros
         df_mostrar = iter_info["tabla"].fillna("-")
         st.dataframe(df_mostrar, use_container_width=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-    # Resumen de variables al final de la optimización
-    basicas_str = ", ".join([f"{var} = {res_propio['solucion'].get(var, '0')}" for var in res_propio['basicas_final']])
+    # Resumen de variables al final del procedimiento
+    basicas_str = ", ".join([f"{var} = {res_propio['solucion_completa'].get(var, 0)}" for var in res_propio['basicas_final']])
     no_basicas_str = ", ".join(res_propio['no_basicas_final'])
     
-    st.markdown(f"**Variables básicas:** `{basicas_str}`")
-    st.markdown(f"**Variables no básicas (valen 0):** `{no_basicas_str}`")
+    st.markdown(f"**Variables básicas:** {basicas_str}")
+    st.markdown(f"**Variables no básicas (valen 0):** {no_basicas_str}")
+
+    # 2. COMPARACIÓN SIMPLEX PROPIO VS PULP (SECCIÓN RESTAURADA)
+    st.markdown("---")
+    st.subheader("Comparación: Simplex Propio vs. PuLP")
+    
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.write("### Método A (Simplex Propio)")
+        st.metric("Resultado Z", f"Q{res_propio['z']:,}")
+        st.json(res_propio["solucion"])
+        
+    with col_b:
+        st.write("### Método B (PuLP)")
+        st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
+        st.json(res_pulp["solucion"])
 
 
 # --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
