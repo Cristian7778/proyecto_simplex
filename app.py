@@ -67,43 +67,45 @@ with tab1:
 res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
 res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
 
-# --- TAB 2: PASO A PASO (SIMPLEX VS PULP) ---
+# --- TAB 2: PASO A PASO (FORMATO IDÉNTICO A LA GUÍA) ---
 with tab2:
-    st.subheader("Iteraciones del Algoritmo Simplex Propio")
-    st.write("Visualización detallada de la tabla inicial, variables básicas/no básicas, pivote e iteraciones.")
-    
+    st.subheader("Simplex propio, paso a paso")
+    st.caption("Tabla inicial, variable entrante y saliente, pivote y cada iteración hasta la tabla final.")
+    st.caption("La fila Z muestra $z_j - c_j$; M es la penalización de las artificiales.")
+    st.markdown("---")
+
     for iter_info in res_propio["iteraciones"]:
         paso_num = iter_info['paso']
-        titulo_expander = f"Paso {paso_num}: Tabla Inicial" if paso_num == 0 else f"Paso {paso_num}: Iteración Simplex"
         
-        with st.expander(titulo_expander, expanded=(paso_num == 0)):
-            # Mostrar Variables Básicas y No Básicas
-            c_b1, c_b2 = st.columns(2)
-            c_b1.write(f"**Variables Básicas:** `{', '.join(iter_info['basicas'])}`")
-            c_b2.write(f"**Variables No Básicas:** `{', '.join(iter_info['no_basicas'])}`")
-            
-            # Mostrar Pivote e Información de Transición
-            if iter_info['entrante']:
-                st.info(
-                    f"🟢 **Variable Entrante:** `{iter_info['entrante']}` | "
-                    f"🔴 **Variable Saliente:** `{iter_info['saliente']}` | "
-                    f"🎯 **Elemento Pivote:** `{iter_info['pivote_val']}`"
-                )
-            
-            # Tabla de la iteración
-            st.dataframe(iter_info["tabla"], use_container_width=True)
+        # Título del bloque de iteración
+        if paso_num == 0:
+            st.markdown("### Tabla inicial")
+        elif iter_info.get("es_final"):
+            st.markdown(f"### Iteración {paso_num} · tabla final")
+        else:
+            st.markdown(f"### Iteración {paso_num}")
 
-    st.markdown("---")
-    st.subheader("Comparación de Métodos: Simplex Propio vs. PuLP")
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.write("### Método A (Simplex Propio)")
-        st.metric("Resultado Z", f"Q{res_propio['z']:,}")
-        st.json(res_propio["solucion"])
-    with col_b:
-        st.write("### Método B (PuLP)")
-        st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
-        st.json(res_pulp["solucion"])
+        # Subtítulo con pivote y variables (Ej: Entra x3 - Sale s2 - Pivote 6)
+        if iter_info.get("entrante"):
+            st.markdown(
+                f"**Entra {iter_info['entrante']}** (valor más negativo en Z) · "
+                f"**Sale {iter_info['saliente']}** (razón mínima {iter_info['razon_min']}) · "
+                f"**Pivote {iter_info['pivote_val']}**"
+            )
+        elif iter_info.get("es_final"):
+            st.success("No quedan valores negativos en la fila Z: la solución es óptima.")
+
+        # Tabla de iteración formateada sin índices raros
+        df_mostrar = iter_info["tabla"].fillna("-")
+        st.dataframe(df_mostrar, use_container_width=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+    # Resumen de variables al final de la optimización
+    basicas_str = ", ".join([f"{var} = {res_propio['solucion'].get(var, '0')}" for var in res_propio['basicas_final']])
+    no_basicas_str = ", ".join(res_propio['no_basicas_final'])
+    
+    st.markdown(f"**Variables básicas:** `{basicas_str}`")
+    st.markdown(f"**Variables no básicas (valen 0):** `{no_basicas_str}`")
 
 
 # --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
