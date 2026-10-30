@@ -3,7 +3,7 @@ import pandas as pd
 import pulp
 
 def resolver_simplex_propio(c, A, b, signos, es_max=True):
-    # Convertir a problema de maximización
+    # Ajuste según sentido de optimización
     c_mod = np.array(c, dtype=float) if es_max else -np.array(c, dtype=float)
     A_mod = np.array(A, dtype=float)
     b_mod = np.array(b, dtype=float)
@@ -15,24 +15,22 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
     slack_names = [f"s{i+1}" for i in range(num_rest)]
     all_cols = var_names + slack_names + ["LD", "Razón"]
     
-    # Construcción del Tableau (incluyendo columna Razón)
+    # Construcción del Tableau con Razón
     tableau = np.zeros((num_rest + 1, len(all_cols)))
     tableau[:num_rest, :num_vars] = A_mod
     tableau[:num_rest, num_vars:num_vars+num_rest] = np.eye(num_rest)
-    tableau[:num_rest, -2] = b_mod  # LD
-    tableau[-1, :num_vars] = -c_mod  # Fila Z
+    tableau[:num_rest, -2] = b_mod
+    tableau[-1, :num_vars] = -c_mod
     
     var_basicas = slack_names.copy()
     iteraciones = []
     paso = 0
     
     while True:
-        # Criterio de variable entrante (columna con valor más negativo en Z)
         fila_z = tableau[-1, :-2]
-        
-        # Calcular razones para las filas
         col_pivote_temp = np.argmin(fila_z) if np.min(fila_z) < -1e-7 else -1
         
+        # Cálculo de Razones para la columna
         for i in range(num_rest):
             if col_pivote_temp != -1 and tableau[i, col_pivote_temp] > 1e-7:
                 tableau[i, -1] = tableau[i, -2] / tableau[i, col_pivote_temp]
@@ -41,22 +39,21 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         tableau[-1, -1] = np.nan
         
         df_tableau = pd.DataFrame(tableau, index=var_basicas + ["Z"], columns=all_cols)
-        df_tableau_display = df_tableau.round(4)
         
-        # Guardar estado de la iteración
         no_basicas = [col for col in var_names + slack_names if col not in var_basicas]
         info_paso = {
             "paso": paso,
-            "tabla": df_tableau_display,
+            "tabla": df_tableau.round(4),
             "basicas": var_basicas.copy(),
             "no_basicas": no_basicas,
             "entrante": None,
             "saliente": None,
             "pivote_val": None,
-            "razon_min": None
+            "razon_min": None,
+            "es_final": False
         }
         
-        # Verificar si alcanzamos el óptimo
+        # Criterio de parada (óptimo alcanzado)
         if col_pivote_temp == -1:
             info_paso["es_final"] = True
             iteraciones.append(info_paso)
@@ -66,7 +63,7 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         var_entrante = all_cols[col_pivote]
         info_paso["entrante"] = var_entrante
         
-        # Prueba del Cociente Mínimo (fila pivote)
+        # Prueba de cociente mínimo
         cocientes = [tableau[i, -1] if not np.isnan(tableau[i, -1]) and tableau[i, -1] >= 0 else np.inf for i in range(num_rest)]
         fila_pivote = np.argmin(cocientes)
         
@@ -81,11 +78,10 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         info_paso["saliente"] = var_saliente
         info_paso["pivote_val"] = round(val_pivote, 4)
         info_paso["razon_min"] = round(cocientes[fila_pivote], 4)
-        info_paso["es_final"] = False
         
         iteraciones.append(info_paso)
         
-        # Operaciones Gauss-Jordan
+        # Operaciones de pivoteo Gauss-Jordan
         tableau[fila_pivote, :-1] /= val_pivote
         for i in range(num_rest + 1):
             if i != fila_pivote:
@@ -95,18 +91,21 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         var_basicas[fila_pivote] = var_entrante
         paso += 1
 
-    # Formatear solución final
-    solucion = {f"x{j+1}": 0.0 for j in range(num_vars)}
+    # Construir mapa de solución completa (variables x y holguras s)
+    solucion_completa = {}
+    for col in var_names + slack_names:
+        solucion_completa[col] = 0.0
     for i, var in enumerate(var_basicas):
-        if var.startswith("x"):
-            solucion[var] = round(tableau[i, -2], 4)
-            
+        solucion_completa[var] = round(tableau[i, -2], 4)
+        
+    solucion_vars = {f"x{j+1}": solucion_completa[f"x{j+1}"] for j in range(num_vars)}
     val_z = round(tableau[-1, -2] if es_max else -tableau[-1, -2], 4)
     
     return {
         "estado": "Óptimo",
         "z": val_z,
-        "solucion": solucion,
+        "solucion": solucion_vars,
+        "solucion_completa": solucion_completa,
         "iteraciones": iteraciones,
         "basicas_final": var_basicas,
         "no_basicas_final": [col for col in var_names + slack_names if col not in var_basicas]
