@@ -116,7 +116,7 @@ def resolver_pulp(c, A, b, signos, es_max=True):
     # Función Objetivo
     prob += pulp.lpSum([c[i] * vars_pulp[i] for i in range(num_vars)])
 
-    # Restricciones según el signo seleccionado por el usuario
+    # Restricciones evaluando el signo escogido
     for i in range(len(b)):
         expresion = pulp.lpSum([A[i][j] * vars_pulp[j] for j in range(num_vars)])
         if signos[i] == "<=":
