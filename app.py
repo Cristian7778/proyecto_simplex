@@ -79,24 +79,82 @@ with tab2:
         st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
         st.json(res_pulp["solucion"])
 
-# TAB 3: DASHBOARD
+# --- TAB 3: DASHBOARD DE RESULTADOS E INTERFAZ ---
 with tab3:
-    st.subheader("Visualización e Interpretación")
+    st.subheader("📈 Visualización e Interpretación de Resultados")
+    
+    # Indicadores Métricos
     c1, c2 = st.columns(2)
     c1.metric("Valor Óptimo Z", f"Q{res_propio['z']:,}")
     c2.metric("Estado de la Solución", res_propio["estado"])
 
-    df_sol = pd.DataFrame({
-        "Variable": [nombres_vars[i] for i in range(num_vars)],
-        "Valor Óptimo": [res_propio["solucion"][f"x{i+1}"] for i in range(num_vars)]
+    st.markdown("---")
+    
+    # 1. TABLA DE RECURSOS (Disponible vs. Utilizado vs. Holgura)
+    st.subheader("📋 Tabla de Análisis de Recursos y Holguras")
+    
+    recursos_usados = []
+    for i in range(num_rest):
+        # Calcular el consumo real del recurso i: sum(a_ij * x_j)
+        uso = sum(matriz_A[i][j] * res_propio["solucion"][f"x{j+1}"] for j in range(num_vars))
+        recursos_usados.append(round(uso, 4))
+    
+    holguras_vals = [round(vector_b[i] - recursos_usados[i], 4) for i in range(num_rest)]
+    
+    df_recursos = pd.DataFrame({
+        "Recurso": nombres_rest,
+        "Disponible (B)": vector_b,
+        "Utilizado": recursos_usados,
+        "Holgura (Sobrante)": holguras_vals,
+        "Estado": ["Agotado (Activo)" if h == 0 else "Sobrante" for h in holguras_vals]
     })
-    fig = px.bar(df_sol, x="Variable", y="Valor Óptimo", color="Variable", title="Distribución Óptima de Variables")
-    st.plotly_chart(fig, use_container_width=True)
+    
+    st.dataframe(df_recursos, use_container_width=True)
 
-    st.subheader("Interpretación Automática")
-    texto = f"Para optimizar el problema **{nombre_problema}**, la solución recomienda:\n\n"
+    st.markdown("---")
+    st.subheader("📊 Visualizaciones del Modelo")
+    
+    col_graf1, col_graf2 = st.columns(2)
+    
+    # Gráfico 1: Participación de Variables en la Solución
+    with col_graf1:
+        df_sol = pd.DataFrame({
+            "Variable": nombres_vars,
+            "Valor Óptimo": [res_propio["solucion"][f"x{i+1}"] for i in range(num_vars)]
+        })
+        fig_vars = px.bar(
+            df_sol, 
+            x="Variable", 
+            y="Valor Óptimo", 
+            color="Variable", 
+            title="1. Participación de Cada Variable en la Solución"
+        )
+        st.plotly_chart(fig_vars, use_container_width=True)
+        
+    # Gráfico 2: Recursos Utilizados vs. Disponibles (SEGUNDO GRÁFICO REQUERIDO)
+    with col_graf2:
+        df_comparativo_rec = pd.DataFrame({
+            "Recurso": nombres_rest * 2,
+            "Cantidad": vector_b + recursos_usados,
+            "Tipo": ["Disponible"] * num_rest + ["Utilizado"] * num_rest
+        })
+        fig_rec = px.bar(
+            df_comparativo_rec, 
+            x="Recurso", 
+            y="Cantidad", 
+            color="Tipo", 
+            barmode="group",
+            title="2. Recursos Utilizados vs. Disponibles"
+        )
+        st.plotly_chart(fig_rec, use_container_width=True)
+
+    # Resumen e Interpretación Automática
+    st.markdown("---")
+    st.subheader("🗣️ Interpretación Automática")
+    texto = f"Para optimizar el escenario **{nombre_problema}**, la solución óptima recomienda:\n\n"
     for i in range(num_vars):
-        texto += f"- **{res_propio['solucion'][f'x{i+1}']} unidades** de *{nombres_vars[i]}*\n"
+        cant = res_propio['solucion'][f'x{i+1}']
+        texto += f"- **{cant} unidades** de *{nombres_vars[i]}*\n"
     texto += f"\nGenerando un resultado óptimo de **Q{res_propio['z']:,}**."
     st.info(texto)
 
