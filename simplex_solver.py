@@ -3,108 +3,108 @@ import pandas as pd
 import pulp
 
 def resolver_simplex_propio(c, A, b, signos, es_max=True):
-    """
-    Algoritmo Simplex Primal paso a paso desde cero.
-    """
-    c_vec = np.array(c) if es_max else -np.array(c)
-
-    num_vars = len(c_vec)
+    # Convertir a problema de maximización
+    c_mod = np.array(c, dtype=float) if es_max else -np.array(c, dtype=float)
+    A_mod = np.array(A, dtype=float)
+    b_mod = np.array(b, dtype=float)
+    
+    num_vars = len(c)
     num_rest = len(b)
-
-    # Matriz inicial con variables de holgura
-    matriz = np.hstack([A, np.eye(num_rest), np.array(b).reshape(-1, 1)])
     
-    var_names = [f"x{i+1}" for i in range(num_vars)] + [f"s{i+1}" for i in range(num_rest)]
-    var_basicas = [f"s{i+1}" for i in range(num_rest)]
+    # Crear nombres de variables
+    var_names = [f"x{j+1}" for j in range(num_vars)]
+    slack_names = [f"s{i+1}" for i in range(num_rest)]
+    all_cols = var_names + slack_names + ["RHS"]
     
-    c_line = np.hstack([-c_vec, np.zeros(num_rest + 1)])
-    tabla = np.vstack([matriz, c_line])
-
+    # Matriz del Tableau Inicial
+    tableau = np.zeros((num_rest + 1, num_vars + num_rest + 1))
+    tableau[:num_rest, :num_vars] = A_mod
+    tableau[:num_rest, num_vars:num_vars+num_rest] = np.eye(num_rest)
+    tableau[:num_rest, -1] = b_mod
+    tableau[-1, :num_vars] = -c_mod
+    
+    var_basicas = slack_names.copy()
     iteraciones = []
+    paso = 0
     
-    # Guardar estado inicial (Iteración 0)
-    iteraciones.append({
-        "paso": 0,
-        "tabla": pd.DataFrame(tabla.copy(), columns=var_names + ["RHS"], index=var_basicas + ["Z"]),
-        "basicas": list(var_basicas),
-        "entrante": None,
-        "saliente": None
-    })
-
-    paso = 1
-    max_iter = 50
-
-    while paso < max_iter:
-        z_row = tabla[-1, :-1]
+    while True:
+        # Registrar estado de la iteración actual
+        df_tableau = pd.DataFrame(tableau, index=var_basicas + ["Z"], columns=all_cols)
         
-        # Criterio de optimalidad
-        if np.all(z_row >= -1e-7):
+        # Identificar variables no básicas
+        no_basicas = [col for col in all_cols[:-1] if col not in var_basicas]
+        
+        # Guardar paso inicial/actual
+        info_paso = {
+            "paso": paso,
+            "tabla": df_tableau,
+            "basicas": var_basicas.copy(),
+            "no_basicas": no_basicas,
+            "entrante": None,
+            "saliente": None,
+            "pivote_val": None
+        }
+        
+        # Criterio de Optimalidad
+        fila_z = tableau[-1, :-1]
+        if np.all(fila_z >= -1e-7):
+            info_paso["mensaje"] = "¡Solución Óptima Alcanzada!"
+            iteraciones.append(info_paso)
             break
-
-        # Variable entrante (columna pivote)
-        col_pivote = np.argmin(z_row)
-        var_entrante = var_names[col_pivote]
-
-        # Prueba del cociente mínimo
-        col_vals = tabla[:-1, col_pivote]
-        rhs_vals = tabla[:-1, -1]
-
+            
+        # Variable Entrante (columna pivote)
+        col_pivote = np.argmin(fila_z)
+        var_entrante = all_cols[col_pivote]
+        info_paso["entrante"] = var_entrante
+        
+        # Prueba del Cociente Mínimo (fila pivote)
+        col_vals = tableau[:num_rest, col_pivote]
+        rhs_vals = tableau[:num_rest, -1]
+        
         cocientes = []
         for i in range(num_rest):
             if col_vals[i] > 1e-7:
                 cocientes.append(rhs_vals[i] / col_vals[i])
             else:
                 cocientes.append(np.inf)
-
-        if np.all(np.isinf(cocientes)):
-            return {"estado": "No acotado", "iteraciones": iteraciones}
-
+                
         fila_pivote = np.argmin(cocientes)
+        if cocientes[fila_pivote] == np.inf:
+            info_paso["mensaje"] = "Problema no acotado"
+            iteraciones.append(info_paso)
+            break
+            
         var_saliente = var_basicas[fila_pivote]
-        elem_pivote = tabla[fila_pivote, col_pivote]
-
-        # Pivoteo de Gauss-Jordan
-        tabla[fila_pivote] = tabla[fila_pivote] / elem_pivote
-
-        for i in range(len(tabla)):
+        val_pivote = tableau[fila_pivote, col_pivote]
+        
+        info_paso["saliente"] = var_saliente
+        info_paso["pivote_val"] = round(val_pivote, 4)
+        iteraciones.append(info_paso)
+        
+        # Operaciones de Pivoteo (Gauss-Jordan)
+        tableau[fila_pivote, :] /= val_pivote
+        for i in range(num_rest + 1):
             if i != fila_pivote:
-                tabla[i] = tabla[i] - tabla[i, col_pivote] * tabla[fila_pivote]
-
+                fact = tableau[i, col_pivote]
+                tableau[i, :] -= fact * tableau[fila_pivote, :]
+                
         var_basicas[fila_pivote] = var_entrante
-
-        iteraciones.append({
-            "paso": paso,
-            "tabla": pd.DataFrame(tabla.copy(), columns=var_names + ["RHS"], index=var_basicas + ["Z"]),
-            "basicas": list(var_basicas),
-            "entrante": var_entrante,
-            "saliente": var_saliente
-        })
-
         paso += 1
 
-    # Extraer solución
-    solucion = {f"x{i+1}": 0.0 for i in range(num_vars)}
-    holguras = {f"s{i+1}": 0.0 for i in range(num_rest)}
-
+    # Extraer Solución Final
+    solucion = {f"x{j+1}": 0.0 for j in range(num_vars)}
     for i, var in enumerate(var_basicas):
-        val = tabla[i, -1]
-        if var in solucion:
-            solucion[var] = round(val, 4)
-        elif var in holguras:
-            holguras[var] = round(val, 4)
-
-    val_z = tabla[-1, -1]
-    if not es_max:
-        val_z = -val_z
-
+        if var.startswith("x"):
+            solucion[var] = round(tableau[i, -1], 4)
+            
+    val_z = round(tableau[-1, -1] if es_max else -tableau[-1, -1], 4)
+    
     return {
         "estado": "Óptimo",
-        "z": round(val_z, 4),
+        "z": val_z,
         "solucion": solucion,
-        "holguras": holguras,
         "iteraciones": iteraciones
     }
-
 
 def resolver_pulp(c, A, b, signos, es_max=True):
     sentido = pulp.LpMaximize if es_max else pulp.LpMinimize
@@ -113,10 +113,8 @@ def resolver_pulp(c, A, b, signos, es_max=True):
     num_vars = len(c)
     vars_pulp = [pulp.LpVariable(f"x{i+1}", lowBound=0) for i in range(num_vars)]
 
-    # Función Objetivo
     prob += pulp.lpSum([c[i] * vars_pulp[i] for i in range(num_vars)])
 
-    # Restricciones evaluando el signo escogido
     for i in range(len(b)):
         expresion = pulp.lpSum([A[i][j] * vars_pulp[j] for j in range(num_vars)])
         if signos[i] == "<=":
