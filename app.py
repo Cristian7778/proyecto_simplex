@@ -68,6 +68,7 @@ res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
 res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
 
 # --- TAB 2: PASO A PASO (FORMATO IDÉNTICO A LA GUÍA) ---
+# --- TAB 2: PASO A PASO (FORMATO IDÉNTICO A LA GUÍA) ---
 with tab2:
     st.subheader("Simplex propio, paso a paso")
     st.caption("Tabla inicial, variable entrante y saliente, pivote y cada iteración hasta la tabla final.")
