@@ -106,20 +106,25 @@ def resolver_simplex_propio(c, A, b, es_max=True):
     }
 
 
-def resolver_pulp(c, A, b, es_max=True):
+def resolver_pulp(c, A, b, signos, es_max=True):
     sentido = pulp.LpMaximize if es_max else pulp.LpMinimize
     prob = pulp.LpProblem("Modelo_Validacion", sentido)
 
     num_vars = len(c)
-    # Sintaxis estándar universal
     vars_pulp = [pulp.LpVariable(f"x{i+1}", lowBound=0) for i in range(num_vars)]
 
     # Función Objetivo
     prob += pulp.lpSum([c[i] * vars_pulp[i] for i in range(num_vars)])
 
-    # Restricciones
+    # Restricciones según el signo seleccionado por el usuario
     for i in range(len(b)):
-        prob += pulp.lpSum([A[i][j] * vars_pulp[j] for j in range(num_vars)]) <= b[i]
+        expresion = pulp.lpSum([A[i][j] * vars_pulp[j] for j in range(num_vars)])
+        if signos[i] == "<=":
+            prob += expresion <= b[i]
+        elif signos[i] == ">=":
+            prob += expresion >= b[i]
+        elif signos[i] == "=":
+            prob += expresion == b[i]
 
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
