@@ -33,16 +33,24 @@ with tab1:
     cols_obj = st.columns(num_vars)
     coef_c = [cols_obj[i].number_input(f"x{i+1} ({nombres_vars[i]})", value=float((i+1)*100)) for i in range(num_vars)]
 
-    st.markdown("#### Matriz de Restricciones (A) y Disponibilidad (B)")
+    st.markdown("#### Matriz de Restricciones (A), Signo y Disponibilidad (B)")
     matriz_A = []
     vector_b = []
+    signos = []
 
     for i in range(num_rest):
         st.write(f"**{nombres_rest[i]}**")
-        cols = st.columns(num_vars + 1)
+        # Columnas: n variables + 1 selector de signo + 1 disponibilidad RHS
+        cols = st.columns(num_vars + 2)
+        
         row_a = [cols[j].number_input(f"x{j+1} en R{i+1}", value=float((i+j+1)*2), key=f"a_{i}_{j}") for j in range(num_vars)]
         matriz_A.append(row_a)
-        val_b = cols[-1].number_input(f"Disponible (RHS {i+1})", value=float(100 * (i+1)), key=f"b_{i}")
+        
+        # Selector de operador (<=, >=, =)
+        signo = cols[num_vars].selectbox("Signo", ["<=", ">=", "="], key=f"signo_{i}")
+        signos.append(signo)
+        
+        val_b = cols[num_vars + 1].number_input(f"Disponible (RHS {i+1})", value=float(100 * (i+1)), key=f"b_{i}")
         vector_b.append(val_b)
 
     st.markdown("---")
@@ -51,12 +59,13 @@ with tab1:
     st.latex(eq_obj)
     st.write("Sujeto a:")
     for i in range(num_rest):
-        eq_rest = " + ".join([f"{matriz_A[i][j]}x_{{{j+1}}}" for j in range(num_vars)]) + f" \\leq {vector_b[i]}"
+        op_latex = "\\le" if signos[i] == "<=" else ("\\ge" if signos[i] == ">=" else "=")
+        eq_rest = " + ".join([f"{matriz_A[i][j]}x_{{{j+1}}}" for j in range(num_vars)]) + f" {op_latex} {vector_b[i]}"
         st.latex(eq_rest)
 
-# Ejecutar Algoritmos
-res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, es_max)
-res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, es_max)
+# Ejecutar Algoritmos (Pasando matriz, vectores y operadores)
+res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
+res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
 
 # TAB 2: PASO A PASO
 with tab2:
@@ -95,7 +104,6 @@ with tab3:
     
     recursos_usados = []
     for i in range(num_rest):
-        # Calcular el consumo real del recurso i: sum(a_ij * x_j)
         uso = sum(matriz_A[i][j] * res_propio["solucion"][f"x{j+1}"] for j in range(num_vars))
         recursos_usados.append(round(uso, 4))
     
@@ -131,7 +139,7 @@ with tab3:
         )
         st.plotly_chart(fig_vars, use_container_width=True)
         
-    # Gráfico 2: Recursos Utilizados vs. Disponibles (SEGUNDO GRÁFICO REQUERIDO)
+    # Gráfico 2: Recursos Utilizados vs. Disponibles
     with col_graf2:
         df_comparativo_rec = pd.DataFrame({
             "Recurso": nombres_rest * 2,
@@ -168,12 +176,11 @@ with tab4:
 
     # Recalcular vector_b con la variación porcentual
     nuevos_b = [b * (1 + porcentaje / 100.0) for b in vector_b]
-    res_esc = resolver_pulp(coef_c, matriz_A, nuevos_b, es_max)
+    res_esc = resolver_pulp(coef_c, matriz_A, nuevos_b, signos, es_max)
 
-    # 1. TABLA COMPARATIVA DETALLADA (Z + Cantidades por Variable)
+    # 1. TABLA COMPARATIVA DETALLADA
     st.markdown("### 📋 Tabla Comparativa de Escenarios")
     
-    # Construcción de la tabla con Z y variables individuales
     datos_comparativos = {
         "Métrica / Variable": ["Valor Óptimo Z ($Q$)"] + [f"Cantidad {nombres_vars[j]}" for j in range(num_vars)],
         "Escenario Original": [f"{res_propio['z']:,}"] + [f"{res_propio['solucion'][f'x{j+1}']}" for j in range(num_vars)],
