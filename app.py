@@ -59,9 +59,13 @@ with tab1:
     st.latex(eq_obj)
     st.write("Sujeto a:")
     for i in range(num_rest):
-        op_latex = "\\le" if signos[i] == "<=" else ("\\ge" if signos[i] == ">=" else "=")
-        eq_rest = " + ".join([f"{matriz_A[i][j]}x_{{{j+1}}}" for j in range(num_vars)]) + f" {op_latex} {vector_b[i]}"
-        st.latex(eq_rest)
+    op_latex = "\\le" if signos[i] == "<=" else ("\\ge" if signos[i] == ">=" else "=")
+    eq_rest = " + ".join([f"{matriz_A[i][j]}x_{{{j+1}}}" for j in range(num_vars)]) + f" {op_latex} {vector_b[i]}"
+    st.latex(eq_rest)
+
+# Restricción de no negatividad (se adapta automáticamente al número de variables):
+vars_str = ", ".join([f"x_{{{i+1}}}" for i in range(num_vars)])
+st.latex(f"{vars_str} \\ge 0")
 
 # Ejecutar Algoritmos (Pasando matriz, vectores y operadores)
 res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
