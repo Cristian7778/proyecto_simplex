@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+import pulp
+
 
 def resolver_simplex_propio(c, A, b, signos, es_max=True):
     num_vars = len(c)
