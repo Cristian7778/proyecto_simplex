@@ -1,316 +1,238 @@
-import streamlit as st
+import numpy as np
 import pandas as pd
-import plotly.express as px
-from simplex_solver import resolver_simplex_propio, resolver_pulp
+import pulp
 
-st.set_page_config(page_title="OptimiApp - Simplex Solver", layout="wide")
-
-st.title("Sistema Inteligente de Optimización de Recursos")
-st.caption("Solucionador de algoritmos y módulo de escenarios")
-
-# --- BARRA LATERAL: Configuración ---
-st.sidebar.header("Configuración del Modelo")
-
-nombre_problema = st.sidebar.text_input("Nombre del Escenario", "Asignación de Recursos")
-tipo_opt = st.sidebar.radio("Objetivo", ["Maximizar", "Minimizar"])
-es_max = tipo_opt == "Maximizar"
-
-num_vars = st.sidebar.number_input("Número de Variables", min_value=, max_value=, value=)
-num_rest = st.sidebar.number_input("Número de Restricciones", min_value=, max_value=, value=)
-
-st.sidebar.subheader("Nombres de Etiquetas")
-nombres_vars = [st.sidebar.text_input(f"Nombre x{i+1}", f"Variable {i+1}", key=f"v_{i}") for i in range(num_vars)]
-nombres_rest = [st.sidebar.text_input(f"Nombre Recurso {i+1}", f"Recurso {i+1}", key=f"r_{i}") for i in range(num_rest)]
-
-# --- PESTAÑAS ---
-tab1, tab2, tab3, tab4 = st.tabs(["1. Formulación", "2. Paso a Paso (Simplex vs PuLP)", "3. Resultados", "4. Escenarios"])
-
-# TAB 1: FORMULACIÓN
-with tab1:
-    st.subheader("Ingreso de Parámetros del Modelo")
+def resolver_simplex_propio(c, A, b, signos, es_max=True):
+    """
+    Resuelve un problema de Programación Lineal utilizando el Algoritmo Simplex Primal
+    con soporte para el Método de la Gran M (para operadores <=, >=, =).
     
-    st.markdown("#### Coeficientes de la Función Objetivo (C)")
-    cols_obj = st.columns(num_vars)
-    coef_c = [cols_obj[i].number_input(f"x{i+1} ({nombres_vars[i]})", value=float((i+1)*100)) for i in range(num_vars)]
-
-    st.markdown("#### Matriz de Restricciones (A), Signo y Disponibilidad (B)")
-    matriz_A = []
-    vector_b = []
-    signos = []
-
+    Parámetros:
+    - c: Coeficientes de la función objetivo.
+    - A: Matriz de coeficientes tecnológicos de las restricciones.
+    - b: Vector de disponibilidades (Lado Derecho / RHS).
+    - signos: Lista con los operadores relacionales de cada restricción ("<=", ">=", "=").
+    - es_max: Booleano que indica si se desea Maximizar (True) o Minimizar (False).
+    """
+    num_vars = len(c)
+    num_rest = len(b)
+    
+    # Si el objetivo es minimizar, se invierten los signos de c para transformar a maximización
+    c_mod = np.array(c, dtype=float) if es_max else -np.array(c, dtype=float)
+    A_mod = np.array(A, dtype=float)
+    b_mod = np.array(b, dtype=float)
+    
+    # --- PASO 1: Normalización de Lados Derechos Negativos (b_i < 0) ---
     for i in range(num_rest):
-        st.write(f"**{nombres_rest[i]}**")
-        # Columnas: n variables + 1 selector de signo + 1 disponibilidad RHS
-        cols = st.columns(num_vars + 2)
-        
-        row_a = [cols[j].number_input(f"x{j+1} en R{i+1}", value=float((i+j+1)*2), key=f"a_{i}_{j}") for j in range(num_vars)]
-        matriz_A.append(row_a)
-        
-        # Selector de operador (<=, >=, =)
-        signo = cols[num_vars].selectbox("Signo", ["<=", ">=", "="], key=f"signo_{i}")
-        signos.append(signo)
-        
-        val_b = cols[num_vars + 1].number_input(f"Disponible (RHS {i+1})", value=float(100 * (i+1)), key=f"b_{i}")
-        vector_b.append(val_b)
+        if b_mod[i] < 0:
+            b_mod[i] *= -1
+            A_mod[i] *= -1
+            # Inversión del operador al multiplicar por -1
+            if signos[i] == "<=":
+                signos[i] = ">="
+            elif signos[i] == ">=":
+                signos[i] = "<="
 
-    st.markdown("---")
-    st.subheader("Modelo Matemático Formalizado")
-    eq_obj = f"\\text{{{tipo_opt}}} \\quad Z = " + " + ".join([f"{coef_c[i]}x_{{{i+1}}}" for i in range(num_vars)])
-    st.latex(eq_obj)
-    st.write("Sujeto a:")
+    # --- PASO 2: Clasificación de Variables Especiales (Holgura, Exceso y Artificiales) ---
+    var_names = [f"x{j+1}" for j in range(num_vars)]  # Variables de decisión x1, x2...
+    slack_names = []   # Variables de Holgura (s)
+    excess_names = []  # Variables de Exceso (e)
+    artif_names = []   # Variables Artificiales (a)
+    
+    row_slack_map = {}
+    row_artif_map = {}
+    
+    s_count, e_count, a_count = 1, 1, 1
+    for i, sg in enumerate(signos):
+        if sg == "<=":
+            name = f"s{s_count}"
+            slack_names.append(name)
+            row_slack_map[i] = (name, 1.0)
+            s_count += 1
+        elif sg == ">=":
+            e_name = f"e{e_count}"
+            a_name = f"a{a_count}"
+            excess_names.append(e_name)
+            artif_names.append(a_name)
+            row_slack_map[i] = (e_name, -1.0)
+            row_artif_map[i] = a_name
+            e_count += 1
+            a_count += 1
+        elif sg == "=":
+            a_name = f"a{a_count}"
+            artif_names.append(a_name)
+            row_artif_map[i] = a_name
+            a_count += 1
+
+    # Estructuración de los nombres de todas las columnas del Tableau
+    all_cols = var_names + slack_names + excess_names + artif_names + ["LD", "Razón"]
+    
+    # Matriz inicial llena de ceros: (Restricciones + 1 Fila Z) x Columnas Totales
+    tableau = np.zeros((num_rest + 1, len(all_cols)))
+    var_basicas = []
+    
+    # Asignación de coeficientes A y disponibilidades LD en el Tableau
+    tableau[:num_rest, :num_vars] = A_mod
+    tableau[:num_rest, -2] = b_mod
+    
+    # Colocación de coeficientes de variables especiales e identificación de la Base Inicial
     for i in range(num_rest):
-        op_latex = "\\le" if signos[i] == "<=" else ("\\ge" if signos[i] == ">=" else "=")
-        eq_rest = " + ".join([f"{matriz_A[i][j]}x_{{{j+1}}}" for j in range(num_vars)]) + f" {op_latex} {vector_b[i]}"
-        st.latex(eq_rest)
+        if i in row_slack_map:
+            col_name, val = row_slack_map[i]
+            col_idx = all_cols.index(col_name)
+            tableau[i, col_idx] = val
+            if val == 1.0:
+                var_basicas.append(col_name)  # Las holguras positivas entran a la base
+                
+        if i in row_artif_map:
+            artif_name = row_artif_map[i]
+            col_idx = all_cols.index(artif_name)
+            tableau[i, col_idx] = 1.0
+            var_basicas.append(artif_name)  # Las artificiales entran a la base
 
-# Restricción de no negatividad (se adapta automáticamente al número de variables):
-    vars_str = ", ".join([f"x_{{{i+1}}}" for i in range(num_vars)])
-    st.latex(f"{vars_str} \\ge 0")
-
-# Ejecutar Algoritmos (Pasando matriz, vectores y operadores)
-res_propio = resolver_simplex_propio(coef_c, matriz_A, vector_b, signos, es_max)
-res_pulp = resolver_pulp(coef_c, matriz_A, vector_b, signos, es_max)
-
-# --- TAB 2: PASO A PASO (SIMPLEX PROPIO VS PULP) ---
-with tab2:
-    st.subheader("Simplex propio, paso a paso")
-    st.caption("Tabla inicial, variable entrante y saliente, pivote y cada iteración hasta la tabla final.")
-    st.caption("La fila Z muestra $z_j - c_j$; M es la penalización de las artificiales.")
-    st.markdown("---")
-
-    # 1. RENDERIZADO DE TODAS LAS TABLAS / ITERACIONES DEL SIMPLEX PROPIO
-    for iter_info in res_propio["iteraciones"]:
-        paso_num = iter_info['paso']
+    # --- PASO 3: Método de la Gran M (Penalización en la Fila Z) ---
+    M = 1e6  # Valor simbólico para representar un número infinitamente grande
+    tableau[-1, :num_vars] = -c_mod
+    
+    # Asignar la penalización M en las columnas artificiales
+    for artif in artif_names:
+        col_idx = all_cols.index(artif)
+        tableau[-1, col_idx] = M
         
-        if paso_num == 0:
-            st.markdown("### Tabla inicial")
-        elif iter_info.get("es_final"):
-            st.markdown(f"### Iteración {paso_num} · tabla final")
-        else:
-            st.markdown(f"### Iteración {paso_num}")
-
-        # Subtítulo explicativo del pivote y variables
-        if iter_info.get("entrante"):
-            st.markdown(
-                f"**Entra {iter_info['entrante']}** (valor más negativo en Z) · "
-                f"**Sale {iter_info['saliente']}** (razón mínima {iter_info['razon_min']}) · "
-                f"**Pivote {iter_info['pivote_val']}**"
-            )
-        elif iter_info.get("es_final"):
-            st.success("No quedan valores negativos en la fila Z: la solución es óptima.")
-
-        # Muestra la tabla de la iteración actual
-        df_mostrar = iter_info["tabla"].fillna("-")
-        st.dataframe(df_mostrar, use_container_width=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-
-    # Resumen explícito de variables básicas y no básicas al final
-    basicas_str = ", ".join([f"{var} = {res_propio['solucion_completa'].get(var, 0)}" for var in res_propio['basicas_final']])
-    no_basicas_str = ", ".join(res_propio['no_basicas_final'])
-    
-    st.markdown(f"**Variables básicas:** {basicas_str}")
-    st.markdown(f"**Variables no básicas (valen 0):** {no_basicas_str}")
-
-    st.markdown("---")
-
-    # 2. ESPACIO Y EXPLICACIÓN DE RESOLUCIÓN CON PULP
-    st.subheader("⚡ Resolución mediante Librería PuLP (CBC Solver)")
-    st.info(
-        "**Nota Técnica de PuLP:** PuLP utiliza el solver precompilado COIN-OR CBC en C++. "
-        "A diferencia del algoritmo paso a paso desarrollado localmente, PuLP resuelve el problema de forma directa mediante "
-        "optimizaciones matriciales avanzadas (Branch-and-Cut / Simplex Primal), devolviendo directamente el estado y la solución óptima."
-    )
-
-    # 3. SECCIÓN DE COMPARACIÓN: SIMPLEX PROPIO VS. PULP
-    st.markdown("---")
-    st.subheader("Comparación: Simplex Propio vs. PuLP")
-    
-    col_a, col_b = st.columns(2)
-    with col_a:
-        st.write("### Método A (Simplex Propio)")
-        st.metric("Resultado Z", f"Q{res_propio['z']:,}")
-        st.write("**Valores Óptimos de Variables:**")
-        st.json(res_propio["solucion"])
-        
-    with col_b:
-        st.write("### Método B (PuLP)")
-        st.metric("Resultado Z", f"Q{res_pulp['z']:,}")
-        st.write("**Valores Óptimos de Variables:**")
-        st.json(res_pulp["solucion"])
-# --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
-with tab3:
-    st.subheader("📈 Visualización e Interpretación de Resultados")
-    
-    # Indicadores Métricos
-    c1, c2 = st.columns(2)
-    c1.metric("Valor Óptimo Z", f"Q{res_propio['z']:,}")
-    c2.metric("Estado de la Solución", res_propio["estado"])
-
-    st.markdown("---")
-    
-    # 1. TABLA DE RECURSOS (Disponible vs. Utilizado vs. Holgura)
-    st.subheader("📋 Tabla de Análisis de Recursos y Holguras")
-    
-    recursos_usados = []
+    # Convertir la fila Z a forma canónica (dejar ceros en las columnas básicas artificiales)
     for i in range(num_rest):
-        uso = sum(matriz_A[i][j] * res_propio["solucion"][f"x{j+1}"] for j in range(num_vars))
-        recursos_usados.append(round(uso, 4))
-    
-    holguras_vals = [round(vector_b[i] - recursos_usados[i], 4) for i in range(num_rest)]
-    
-    df_recursos = pd.DataFrame({
-        "Recurso": nombres_rest,
-        "Disponible (B)": vector_b,
-        "Utilizado": recursos_usados,
-        "Holgura (Sobrante)": holguras_vals,
-        "Estado": ["Agotado (Activo)" if h == 0 else "Sobrante" for h in holguras_vals]
-    })
-    
-    st.dataframe(df_recursos, use_container_width=True)
+        if i in row_artif_map:
+            tableau[-1, :-1] -= M * tableau[i, :-1]
 
-    st.markdown("---")
-    st.subheader("📊 Visualizaciones del Modelo")
-    
-    col_graf1, col_graf2 = st.columns(2)
-    
-    with col_graf1:
-        df_sol = pd.DataFrame({
-            "Variable": nombres_vars,
-            "Valor Óptimo": [res_propio["solucion"][f"x{i+1}"] for i in range(num_vars)]
-        })
-        fig_vars = px.bar(
-            df_sol, 
-            x="Variable", 
-            y="Valor Óptimo", 
-            color="Variable", 
-            title="1. Participación de Cada Variable en la Solución"
-        )
-        st.plotly_chart(fig_vars, use_container_width=True)
+    # --- PASO 4: Bucle Iterativo Simplex (Gauss-Jordan) ---
+    iteraciones = []
+    paso = 0
+
+    while True:
+        fila_z = tableau[-1, :-2]
         
-    with col_graf2:
-        df_comparativo_rec = pd.DataFrame({
-            "Recurso": nombres_rest * 2,
-            "Cantidad": vector_b + recursos_usados,
-            "Tipo": ["Disponible"] * num_rest + ["Utilizado"] * num_rest
-        })
-        fig_rec = px.bar(
-            df_comparativo_rec, 
-            x="Recurso", 
-            y="Cantidad", 
-            color="Tipo", 
-            barmode="group",
-            title="2. Recursos Utilizados vs. Disponibles"
-        )
-        st.plotly_chart(fig_rec, use_container_width=True)
-
-    # Resumen e Interpretación Automática
-    st.markdown("---")
-    st.subheader("🗣️ Interpretación Automática")
-    texto = f"Para optimizar el escenario **{nombre_problema}**, la solución óptima recomienda:\n\n"
-    for i in range(num_vars):
-        cant = res_propio['solucion'][f'x{i+1}']
-        texto += f"- **{cant} unidades** de *{nombres_vars[i]}*\n"
-    texto += f"\nGenerando un resultado óptimo de **Q{res_propio['z']:,}**."
-    st.info(texto)
-
-    # --- EXPORTAR DATASET COMPLETO PARA POWER BI ---
-    st.markdown("---")
-    st.subheader("📥 Exportar Resultados Completos a CSV para Power BI")
-
-    # 1. Filas correspondientes a las Variables de Decisión
-    filas_csv = []
-    for j in range(num_vars):
-        filas_csv.append({
-            "Escenario": nombre_problema,
-            "Tipo_Registro": "Variable de Decisión",
-            "Nombre": nombres_vars[j],
-            "Valor": res_propio["solucion"][f"x{j+1}"],
-            "PrecioSombra_Coef": coef_c[j],
-            "Disponible": None,
-            "Utilizado": None,
-            "Holgura": None,
-            "Estado": res_propio["estado"],
-            "Valor_Z_Total": res_propio["z"]
-        })
-
-    # 2. Filas correspondientes a los Recursos / Restricciones y Holguras
-    for i in range(num_rest):
-        uso_rec = sum(matriz_A[i][j] * res_propio["solucion"][f"x{j+1}"] for j in range(num_vars))
-        disp_rec = vector_b[i]
-        holgura_rec = round(disp_rec - uso_rec, 4)
+        # Criterio de Variable Entrante: Selecciona el coeficiente más negativo en la fila Z
+        col_pivote_temp = np.argmin(fila_z) if np.min(fila_z) < -1e-7 else -1
         
-        filas_csv.append({
-            "Escenario": nombre_problema,
-            "Tipo_Registro": "Recurso / Holgura",
-            "Nombre": nombres_rest[i],
-            "Valor": None,
-            "PrecioSombra_Coef": None,
-            "Disponible": disp_rec,
-            "Utilizado": round(uso_rec, 4),
-            "Holgura": holgura_rec,
-            "Estado": "Agotado" if holgura_rec == 0 else "Sobrante",
-            "Valor_Z_Total": res_propio["z"]
-        })
+        # Cálculo de Razones (Lado Derecho / Elemento Pivote)
+        for i in range(num_rest):
+            if col_pivote_temp != -1 and tableau[i, col_pivote_temp] > 1e-7:
+                tableau[i, -1] = tableau[i, -2] / tableau[i, col_pivote_temp]
+            else:
+                tableau[i, -1] = np.nan
+        tableau[-1, -1] = np.nan
+        
+        # Construcción del DataFrame para visualización gráfica en Streamlit
+        df_tableau = pd.DataFrame(tableau, index=var_basicas + ["Z"], columns=all_cols)
+        no_basicas = [col for col in all_cols[:-2] if col not in var_basicas]
+        
+        info_paso = {
+            "paso": paso,
+            "tabla": df_tableau.round(4),
+            "basicas": var_basicas.copy(),
+            "no_basicas": no_basicas,
+            "entrante": None,
+            "saliente": None,
+            "pivote_val": None,
+            "razon_min": None,
+            "es_final": False
+        }
+        
+        # Condición de Parada: No quedan coeficientes negativos en Z (Solución Óptima)
+        if col_pivote_temp == -1:
+            info_paso["es_final"] = True
+            iteraciones.append(info_paso)
+            break
+            
+        col_pivote = col_pivote_temp
+        var_entrante = all_cols[col_pivote]
+        info_paso["entrante"] = var_entrante
+        
+        # Criterio de Variable Saliente: Prueba del Cociente Mínimo no negativo
+        cocientes = [tableau[i, -1] if not np.isnan(tableau[i, -1]) and tableau[i, -1] >= 0 else np.inf for i in range(num_rest)]
+        fila_pivote = np.argmin(cocientes)
+        
+        # Evaluación de Modelo No Acotado
+        if cocientes[fila_pivote] == np.inf:
+            info_paso["mensaje"] = "No acotado"
+            iteraciones.append(info_paso)
+            break
+            
+        var_saliente = var_basicas[fila_pivote]
+        val_pivote = tableau[fila_pivote, col_pivote]
+        
+        info_paso["saliente"] = var_saliente
+        info_paso["pivote_val"] = round(val_pivote, 4)
+        info_paso["razon_min"] = round(cocientes[fila_pivote], 4)
+        
+        iteraciones.append(info_paso)
+        
+        # --- Operaciones de Pivoteo Gauss-Jordan ---
+        # 1. Normalizar la fila pivote dividiendo por el elemento pivote (convertirlo en 1)
+        tableau[fila_pivote, :-1] /= val_pivote
+        
+        # 2. Eliminar coeficientes de las demás filas (convertir en 0 el resto de la columna)
+        for i in range(num_rest + 1):
+            if i != fila_pivote:
+                fact = tableau[i, col_pivote]
+                tableau[i, :-1] -= fact * tableau[fila_pivote, :-1]
+                
+        # Reemplazar la variable saliente por la entrante en la base
+        var_basicas[fila_pivote] = var_entrante
+        paso += 1
 
-    # Convertir a DataFrame y codificar a CSV
-    df_export_powerbi = pd.DataFrame(filas_csv)
-    csv_bytes = df_export_powerbi.to_csv(index=False).encode('utf-8')
-
-    st.download_button(
-        label="📄 Descargar Dataset Completo para Power BI",
-        data=csv_bytes,
-        file_name=f"dataset_powerbi_{nombre_problema.lower().replace(' ', '_')}.csv",
-        mime="text/csv"
-    )
-# --- TAB 4: MÓDULO DE ESCENARIOS Y SENSIBILIDAD ---
-with tab4:
-    st.subheader("🧪 Análisis de Escenarios y Sensibilidad")
-    st.write("Modifica los recursos disponibles para evaluar el impacto en la solución y comparar alternativas.")
-
-    # Slider para ajustar los recursos
-    porcentaje = st.slider("Variar Recursos Disponibles (%)", -50, 50, 0, step=5)
-
-    # Recalcular vector_b con la variación porcentual
-    nuevos_b = [b * (1 + porcentaje / 100.0) for b in vector_b]
-    res_esc = resolver_pulp(coef_c, matriz_A, nuevos_b, signos, es_max)
-
-    # 1. TABLA COMPARATIVA DETALLADA
-    st.markdown("### 📋 Tabla Comparativa de Escenarios")
+    # --- PASO 5: Verificación de Infactibilidad y Extracción de Resultados ---
+    # Si alguna variable artificial queda en la base con un valor > 0, el problema es infactible
+    es_infactible = any(art in var_basicas and tableau[var_basicas.index(art), -2] > 1e-4 for art in artif_names)
     
-    datos_comparativos = {
-        "Métrica / Variable": ["Valor Óptimo Z ($Q$)"] + [f"Cantidad {nombres_vars[j]}" for j in range(num_vars)],
-        "Escenario Original": [f"{res_propio['z']:,}"] + [f"{res_propio['solucion'][f'x{j+1}']}" for j in range(num_vars)],
-        f"Escenario Variado ({porcentaje:+d}%)": [f"{res_esc['z']:,}"] + [f"{res_esc['solucion'][f'x{j+1}']}" for j in range(num_vars)],
-        "Diferencia": [f"{res_esc['z'] - res_propio['z']:+,}"] + [
-            f"{res_esc['solucion'][f'x{j+1}'] - res_propio['solucion'][f'x{j+1}']:+}" for j in range(num_vars)
-        ]
+    solucion_completa = {col: 0.0 for col in all_cols[:-2]}
+    for i, var in enumerate(var_basicas):
+        solucion_completa[var] = round(tableau[i, -2], 4)
+        
+    solucion_vars = {f"x{j+1}": solucion_completa[f"x{j+1}"] for j in range(num_vars)}
+    val_z = round(tableau[-1, -2] if es_max else -tableau[-1, -2], 4)
+    
+    return {
+        "estado": "Infactible" if es_infactible else "Óptimo",
+        "z": val_z,
+        "solucion": solucion_vars,
+        "solucion_completa": solucion_completa,
+        "iteraciones": iteraciones,
+        "basicas_final": var_basicas,
+        "no_basicas_final": [col for col in all_cols[:-2] if col not in var_basicas]
     }
-    
-    df_esc = pd.DataFrame(datos_comparativos)
-    st.dataframe(df_esc, use_container_width=True)
 
-    # 2. GRÁFICO COMPARATIVO DE UTILIDAD Z
-    st.markdown("### 📊 Comparativa de Impacto en el Resultado Óptimo")
-    df_graf_esc = pd.DataFrame({
-        "Escenario": ["Original", f"Variación ({porcentaje:+d}%)"],
-        "Valor Óptimo Z": [res_propio["z"], res_esc["z"]]
-    })
+def resolver_pulp(c, A, b, signos, es_max=True):
+    """
+    Resuelve el mismo modelo de optimización utilizando la librería industrial PuLP 
+    y el motor precompilado en C++ COIN-OR CBC para realizar validación cruzada.
+    """
+    # Configuración de orientación del problema
+    sentido = pulp.LpMaximize if es_max else pulp.LpMinimize
+    prob = pulp.LpProblem("Modelo_Validacion", sentido)
+    num_vars = len(c)
     
-    fig_esc = px.bar(
-        df_graf_esc, 
-        x="Escenario", 
-        y="Valor Óptimo Z", 
-        color="Escenario",
-        text_auto=True,
-        title="Impacto en el Valor Óptimo Z por Cambio en Recursos"
-    )
-    st.plotly_chart(fig_esc, use_container_width=True)
+    # Declaración de variables de decisión continuas no negativas (x_i >= 0)
+    vars_pulp = [pulp.LpVariable(f"x{i+1}", lowBound=0) for i in range(num_vars)]
+    
+    # Asignación de la Función Objetivo al problema
+    prob += pulp.lpSum([c[i] * vars_pulp[i] for i in range(num_vars)])
 
-    # Interpretación del Escenario
-    diferencia_z = res_esc['z'] - res_propio['z']
-    if diferencia_z > 0:
-        st.success(f"💡 Al aumentar los recursos en **{porcentaje}%**, la utilidad incrementa en **Q{diferencia_z:,}**.")
-    elif diferencia_z < 0:
-        st.warning(f"⚠️ Al reducir los recursos en **{porcentaje}%**, la utilidad disminuye en **Q{abs(diferencia_z):,}**.")
-    else:
-        st.info("ℹ️ El cambio en recursos no altera el valor óptimo actual.")
+    # Incorporación dinámica de restricciones evaluando el operador relacional
+    for i in range(len(b)):
+        expresion = pulp.lpSum([A[i][j] * vars_pulp[j] for j in range(num_vars)])
+        if signos[i] == "<=":
+            prob += expresion <= b[i]
+        elif signos[i] == ">=":
+            prob += expresion >= b[i]
+        elif signos[i] == "=":
+            prob += expresion == b[i]
+
+    # Ejecución del solver COIN-OR CBC silenciando la salida técnico en consola
+    prob.solve(pulp.PULP_CBC_CMD(msg=False))
+    
+    # Extracción de valores óptimos calculados
+    solucion = {f"x{i+1}": round(vars_pulp[i].varValue, 4) if vars_pulp[i].varValue is not None else 0.0 for i in range(num_vars)}
+    val_z = round(pulp.value(prob.objective), 4) if pulp.value(prob.objective) is not None else 0.0
+
+    return {"estado": pulp.LpStatus[prob.status], "z": val_z, "solucion": solucion}
