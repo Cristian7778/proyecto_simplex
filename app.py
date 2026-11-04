@@ -15,8 +15,8 @@ nombre_problema = st.sidebar.text_input("Nombre del Escenario", "Asignación de 
 tipo_opt = st.sidebar.radio("Objetivo", ["Maximizar", "Minimizar"])
 es_max = tipo_opt == "Maximizar"
 
-num_vars = st.sidebar.number_input("Número de Variables", min_value=2, max_value=8, value=3)
-num_rest = st.sidebar.number_input("Número de Restricciones", min_value=1, max_value=8, value=3)
+num_vars = st.sidebar.number_input("Número de Variables", min_value=, max_value=, value=)
+num_rest = st.sidebar.number_input("Número de Restricciones", min_value=, max_value=, value=)
 
 st.sidebar.subheader("Nombres de Etiquetas")
 nombres_vars = [st.sidebar.text_input(f"Nombre x{i+1}", f"Variable {i+1}", key=f"v_{i}") for i in range(num_vars)]
