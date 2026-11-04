@@ -73,20 +73,31 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
 
     # Método de la Gran M
     M = 1e6
-    
-    # Inicializar función objetivo
     tableau[-1, :num_vars] = -c_mod
     
-    # IMPORTANTE:
-    # Asignar penalización a las variables artificiales
     for artif in artif_names:
         col_idx = all_cols.index(artif)
         tableau[-1, col_idx] = M
-    
-    # Convertir la fila Z en canónica
+        
     for i in range(num_rest):
         if i in row_artif_map:
             tableau[-1, :-1] -= M * tableau[i, :-1]
+
+    # Inicialización correcta de variables de control
+    iteraciones = []
+    paso = 0
+
+    while True:
+        fila_z = tableau[-1, :-2]
+        col_pivote_temp = np.argmin(fila_z) if np.min(fila_z) < -1e-7 else -1
+        
+        # Calcular Razones
+        for i in range(num_rest):
+            if col_pivote_temp != -1 and tableau[i, col_pivote_temp] > 1e-7:
+                tableau[i, -1] = tableau[i, -2] / tableau[i, col_pivote_temp]
+            else:
+                tableau[i, -1] = np.nan
+        tableau[-1, -1] = np.nan
         
         df_tableau = pd.DataFrame(tableau, index=var_basicas + ["Z"], columns=all_cols)
         no_basicas = [col for col in all_cols[:-2] if col not in var_basicas]
@@ -103,6 +114,7 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
             "es_final": False
         }
         
+        # Criterio de parada (Solución Óptima)
         if col_pivote_temp == -1:
             info_paso["es_final"] = True
             iteraciones.append(info_paso)
@@ -129,6 +141,7 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         
         iteraciones.append(info_paso)
         
+        # Operaciones de pivoteo Gauss-Jordan
         tableau[fila_pivote, :-1] /= val_pivote
         for i in range(num_rest + 1):
             if i != fila_pivote:
