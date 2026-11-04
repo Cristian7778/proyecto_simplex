@@ -3,26 +3,81 @@ import pandas as pd
 import pulp
 
 def resolver_simplex_propio(c, A, b, signos, es_max=True):
-    # Ajuste según sentido de optimización
+    num_vars = len(c)
+    num_rest = len(b)
+    
     c_mod = np.array(c, dtype=float) if es_max else -np.array(c, dtype=float)
     A_mod = np.array(A, dtype=float)
     b_mod = np.array(b, dtype=float)
     
-    num_vars = len(c)
-    num_rest = len(b)
-    
+    # Manejar lados derechos negativos (b_i < 0)
+    for i in range(num_rest):
+        if b_mod[i] < 0:
+            b_mod[i] *= -1
+            A_mod[i] *= -1
+            if signos[i] == "<=":
+                signos[i] = ">="
+            elif signos[i] == ">=":
+                signos[i] = "<="
+
     var_names = [f"x{j+1}" for j in range(num_vars)]
-    slack_names = [f"s{i+1}" for i in range(num_rest)]
-    all_cols = var_names + slack_names + ["LD", "Razón"]
+    slack_names = []
+    excess_names = []
+    artif_names = []
     
-    # Construcción del Tableau con Razón
+    row_slack_map = {}
+    row_artif_map = {}
+    
+    s_count, e_count, a_count = 1, 1, 1
+    for i, sg in enumerate(signos):
+        if sg == "<=":
+            name = f"s{s_count}"
+            slack_names.append(name)
+            row_slack_map[i] = (name, 1.0)
+            s_count += 1
+        elif sg == ">=":
+            e_name = f"e{e_count}"
+            a_name = f"a{a_count}"
+            excess_names.append(e_name)
+            artif_names.append(a_name)
+            row_slack_map[i] = (e_name, -1.0)
+            row_artif_map[i] = a_name
+            e_count += 1
+            a_count += 1
+        elif sg == "=":
+            a_name = f"a{a_count}"
+            artif_names.append(a_name)
+            row_artif_map[i] = a_name
+            a_count += 1
+
+    all_cols = var_names + slack_names + excess_names + artif_names + ["LD", "Razón"]
     tableau = np.zeros((num_rest + 1, len(all_cols)))
-    tableau[:num_rest, :num_vars] = A_mod
-    tableau[:num_rest, num_vars:num_vars+num_rest] = np.eye(num_rest)
-    tableau[:num_rest, -2] = b_mod
-    tableau[-1, :num_vars] = -c_mod
+    var_basicas = []
     
-    var_basicas = slack_names.copy()
+    tableau[:num_rest, :num_vars] = A_mod
+    tableau[:num_rest, -2] = b_mod
+    
+    for i in range(num_rest):
+        if i in row_slack_map:
+            col_name, val = row_slack_map[i]
+            col_idx = all_cols.index(col_name)
+            tableau[i, col_idx] = val
+            if val == 1.0:
+                var_basicas.append(col_name)
+                
+        if i in row_artif_map:
+            artif_name = row_artif_map[i]
+            col_idx = all_cols.index(artif_name)
+            tableau[i, col_idx] = 1.0
+            var_basicas.append(artif_name)
+
+    # Método de la Gran M
+    M = 1e6
+    tableau[-1, :num_vars] = -c_mod
+    for i in range(num_rest):
+        if i in row_artif_map:
+            tableau[-1, :-1] -= M * tableau[i, :-1]
+
     iteraciones = []
     paso = 0
     
@@ -30,7 +85,6 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         fila_z = tableau[-1, :-2]
         col_pivote_temp = np.argmin(fila_z) if np.min(fila_z) < -1e-7 else -1
         
-        # Cálculo de Razones para la columna
         for i in range(num_rest):
             if col_pivote_temp != -1 and tableau[i, col_pivote_temp] > 1e-7:
                 tableau[i, -1] = tableau[i, -2] / tableau[i, col_pivote_temp]
@@ -39,8 +93,8 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         tableau[-1, -1] = np.nan
         
         df_tableau = pd.DataFrame(tableau, index=var_basicas + ["Z"], columns=all_cols)
+        no_basicas = [col for col in all_cols[:-2] if col not in var_basicas]
         
-        no_basicas = [col for col in var_names + slack_names if col not in var_basicas]
         info_paso = {
             "paso": paso,
             "tabla": df_tableau.round(4),
@@ -53,7 +107,6 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
             "es_final": False
         }
         
-        # Criterio de parada (óptimo alcanzado)
         if col_pivote_temp == -1:
             info_paso["es_final"] = True
             iteraciones.append(info_paso)
@@ -63,7 +116,6 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         var_entrante = all_cols[col_pivote]
         info_paso["entrante"] = var_entrante
         
-        # Prueba de cociente mínimo
         cocientes = [tableau[i, -1] if not np.isnan(tableau[i, -1]) and tableau[i, -1] >= 0 else np.inf for i in range(num_rest)]
         fila_pivote = np.argmin(cocientes)
         
@@ -81,7 +133,6 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         
         iteraciones.append(info_paso)
         
-        # Operaciones de pivoteo Gauss-Jordan
         tableau[fila_pivote, :-1] /= val_pivote
         for i in range(num_rest + 1):
             if i != fila_pivote:
@@ -91,10 +142,9 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
         var_basicas[fila_pivote] = var_entrante
         paso += 1
 
-    # Construir mapa de solución completa (variables x y holguras s)
-    solucion_completa = {}
-    for col in var_names + slack_names:
-        solucion_completa[col] = 0.0
+    es_infactible = any(art in var_basicas and tableau[var_basicas.index(art), -2] > 1e-4 for art in artif_names)
+    
+    solucion_completa = {col: 0.0 for col in all_cols[:-2]}
     for i, var in enumerate(var_basicas):
         solucion_completa[var] = round(tableau[i, -2], 4)
         
@@ -102,13 +152,13 @@ def resolver_simplex_propio(c, A, b, signos, es_max=True):
     val_z = round(tableau[-1, -2] if es_max else -tableau[-1, -2], 4)
     
     return {
-        "estado": "Óptimo",
+        "estado": "Infactible" if es_infactible else "Óptimo",
         "z": val_z,
         "solucion": solucion_vars,
         "solucion_completa": solucion_completa,
         "iteraciones": iteraciones,
         "basicas_final": var_basicas,
-        "no_basicas_final": [col for col in var_names + slack_names if col not in var_basicas]
+        "no_basicas_final": [col for col in all_cols[:-2] if col not in var_basicas]
     }
 
 def resolver_pulp(c, A, b, signos, es_max=True):
