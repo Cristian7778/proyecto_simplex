@@ -1,6 +1,6 @@
 import numpy as np
 
-def resolver_simplex_propio(c, A, b, signos, es_max=True):
+def resolver_simplex(c, A, b, signos, es_max=True):
     """
     Simplex de dos fases.
     Soporta <=, >=, =, maximización y minimización.
