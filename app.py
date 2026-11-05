@@ -37,7 +37,8 @@ with tab1:
     
     st.markdown("#### Coeficientes de la Función Objetivo (C)")
     cols_obj = st.columns(num_vars)
-    coef_c = [cols_obj[i].number_input(f"x{i+1} ({nombres_vars[i]})", value=float((i+1)*100)) for i in range(num_vars)]
+    # Coeficientes inicializados en 0.0 (Sin datos preguardados)
+    coef_c = [cols_obj[i].number_input(f"x{i+1} ({nombres_vars[i]})", value=0.0, key=f"c_{i}") for i in range(num_vars)]
 
     st.markdown("#### Matriz de Restricciones (A), Signo y Disponibilidad (B)")
     matriz_A = []
@@ -48,13 +49,15 @@ with tab1:
         st.write(f"**{nombres_rest[i]}**")
         cols = st.columns(num_vars + 2)
         
-        row_a = [cols[j].number_input(f"x{j+1} en R{i+1}", value=float((i+j+1)*2), key=f"a_{i}_{j}") for j in range(num_vars)]
+        # Matriz A inicializada en 0.0 (Sin datos preguardados)
+        row_a = [cols[j].number_input(f"x{j+1} en R{i+1}", value=0.0, key=f"a_{i}_{j}") for j in range(num_vars)]
         matriz_A.append(row_a)
         
         signo = cols[num_vars].selectbox("Signo", ["<=", ">=", "="], key=f"signo_{i}")
         signos.append(signo)
         
-        val_b = cols[num_vars + 1].number_input(f"Disponible (RHS {i+1})", value=float(100 * (i+1)), key=f"b_{i}")
+        # Disponibilidad B inicializada en 0.0 (Sin datos preguardados)
+        val_b = cols[num_vars + 1].number_input(f"Disponible (RHS {i+1})", value=0.0, key=f"b_{i}")
         vector_b.append(val_b)
 
     st.markdown("---")
