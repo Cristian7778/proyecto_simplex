@@ -116,7 +116,7 @@ with tab2:
     st.markdown("---")
 
     # Sección PuLP
-    st.subheader("⚡ Resolución mediante Librería PuLP (CBC Solver)")
+    st.subheader(" Resolución mediante Librería PuLP (CBC Solver)")
     st.info(
         "**Nota Técnica de PuLP:** PuLP utiliza el solver precompilado COIN-OR CBC en C++. "
         "Resuelve el problema de forma directa mediante optimizaciones matriciales avanzadas, devolviendo directamente el estado y la solución óptima."
@@ -140,7 +140,7 @@ with tab2:
 
 # --- TAB 3: DASHBOARD DE RESULTADOS Y EXPORTACIÓN CSV ---
 with tab3:
-    st.subheader("📈 Visualización e Interpretación de Resultados")
+    st.subheader(" Visualización e Interpretación de Resultados")
     
     c1, c2 = st.columns(2)
     c1.metric("Valor Óptimo Z", f"Q{res_propio['z']:,}")
@@ -148,7 +148,7 @@ with tab3:
 
     st.markdown("---")
     
-    st.subheader("📋 Tabla de Análisis de Recursos y Holguras")
+    st.subheader(" Tabla de Análisis de Recursos y Holguras")
     
     recursos_usados = []
     for i in range(num_rest):
@@ -168,7 +168,7 @@ with tab3:
     st.dataframe(df_recursos, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("📊 Visualizaciones del Modelo")
+    st.subheader(" Visualizaciones del Modelo")
     
     col_graf1, col_graf2 = st.columns(2)
     
@@ -203,7 +203,7 @@ with tab3:
         st.plotly_chart(fig_rec, use_container_width=True)
 
     st.markdown("---")
-    st.subheader("🗣️ Interpretación Automática")
+    st.subheader(" Interpretación Automática")
     texto = f"Para optimizar el escenario **{nombre_problema}**, la solución óptima recomienda:\n\n"
     for i in range(num_vars):
         cant = res_propio['solucion'][f'x{i+1}']
@@ -213,7 +213,7 @@ with tab3:
 
     # --- EXPORTAR DATASET COMPLETO PARA POWER BI ---
     st.markdown("---")
-    st.subheader("📥 Exportar Resultados Completos a CSV para Power BI")
+    st.subheader(" Exportar Resultados Completos a CSV para Power BI")
 
     filas_csv = []
     for j in range(num_vars):
@@ -260,7 +260,7 @@ with tab3:
 
 # --- TAB 4: MÓDULO DE ESCENARIOS Y SENSIBILIDAD ---
 with tab4:
-    st.subheader("🧪 Análisis de Escenarios y Sensibilidad")
+    st.subheader(" Análisis de Escenarios y Sensibilidad")
     st.write("Modifica los recursos disponibles para evaluar el impacto en la solución y comparar alternativas.")
 
     porcentaje = st.slider("Variar Recursos Disponibles (%)", -50, 50, 0, step=5)
@@ -268,7 +268,7 @@ with tab4:
     nuevos_b = [b * (1 + porcentaje / 100.0) for b in vector_b]
     res_esc = resolver_pulp(coef_c, matriz_A, nuevos_b, signos, es_max)
 
-    st.markdown("### 📋 Tabla Comparativa de Escenarios")
+    st.markdown("### Tabla Comparativa de Escenarios")
     
     datos_comparativos = {
         "Métrica / Variable": ["Valor Óptimo Z ($Q$)"] + [f"Cantidad {nombres_vars[j]}" for j in range(num_vars)],
@@ -282,7 +282,7 @@ with tab4:
     df_esc = pd.DataFrame(datos_comparativos)
     st.dataframe(df_esc, use_container_width=True)
 
-    st.markdown("### 📊 Comparativa de Impacto en el Resultado Óptimo")
+    st.markdown("###  Comparativa de Impacto en el Resultado Óptimo")
     df_graf_esc = pd.DataFrame({
         "Escenario": ["Original", f"Variación ({porcentaje:+d}%)"],
         "Valor Óptimo Z": [res_propio["z"], res_esc["z"]]
@@ -300,8 +300,8 @@ with tab4:
 
     diferencia_z = res_esc['z'] - res_propio['z']
     if diferencia_z > 0:
-        st.success(f"💡 Al aumentar los recursos en **{porcentaje}%**, la utilidad incrementa en **Q{diferencia_z:,}**.")
+        st.success(f" Al aumentar los recursos en **{porcentaje}%**, la utilidad incrementa en **Q{diferencia_z:,}**.")
     elif diferencia_z < 0:
-        st.warning(f"⚠️ Al reducir los recursos en **{porcentaje}%**, la utilidad disminuye en **Q{abs(diferencia_z):,}**.")
+        st.warning(f" Al reducir los recursos en **{porcentaje}%**, la utilidad disminuye en **Q{abs(diferencia_z):,}**.")
     else:
-        st.info("ℹ️ El cambio en recursos no altera el valor óptimo actual.")
+        st.info(" El cambio en recursos no altera el valor óptimo actual.")
